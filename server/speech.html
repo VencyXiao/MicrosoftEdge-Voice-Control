@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>🎙️ 语音识别服务 - 请勿关闭</title>
+<style>
+  body { font: 14px/1.8 "Microsoft YaHei", sans-serif; max-width: 560px; margin: 40px auto; padding: 0 20px; color: #1f2430; background: #f6f8fc; }
+  .card { background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 4px 18px rgba(0,0,0,.06); }
+  h2 { margin: 0 0 8px; font-size: 19px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #b6bcc9; display: inline-block; }
+  .dot.on { background: #34c759; animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(52,199,89,.5); } 50% { box-shadow: 0 0 0 8px rgba(52,199,89,0); } }
+  .row { display: flex; gap: 10px; margin-top: 14px; }
+  button { padding: 9px 18px; font-size: 14px; border: none; border-radius: 9px; cursor: pointer; }
+  #grant { background: #1a73e8; color: #fff; }
+  #grant:hover { background: #1558b8; }
+  #stop { background: #eef1f7; color: #444; }
+  #stop:hover { background: #e2e7f0; }
+  #log { margin-top: 14px; padding: 12px; background: #f2f5fa; border-radius: 9px; min-height: 56px; font-size: 13px; color: #555; word-break: break-all; }
+  .tip { margin-top: 12px; font-size: 12px; color: #7a8299; line-height: 1.7; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h2><span class="dot" id="dot"></span><span id="title">语音识别服务</span></h2>
+    <p>本页负责麦克风录音与语音转文字，<b>请勿关闭</b>（可切到其他标签页，识别会继续）。</p>
+    <div class="row">
+      <button id="grant">🎤 授权麦克风并开始识别</button>
+      <button id="stop">⏹ 停止</button>
+    </div>
+    <div id="log">初始化…</div>
+    <p class="tip">首次使用请点击上方按钮并在浏览器弹框中选"允许"；之后在扩展弹窗/悬浮球开关语音控制即可自动开始。<br>
+    若一直提示权限被拒：到 <b>edge://settings/content/microphone</b> 把 127.0.0.1 改为允许，并在 <b>edge://settings/privacy</b> 开启"在线语音识别"。</p>
+  </div>
+
+<script>
+/**
+ * 本地识别宿主页
+ *
+ * 为什么独立成 http://127.0.0.1 页面：
+ *   Edge 的 SpeechRecognition 在 chrome-extension:// 源会被直接拒绝（not-allowed）
+ *   且不弹麦克风授权框；只有真实网页源才能正常授权与识别。
+ *
+ * 通信方式：页面没有 chrome API 权限，消息经 content/host_bridge.js 双向转发
+ *   页面 -> window.postMessage({__voiceHost, payload}) -> background
+ *   background -> tabs.sendMessage({target:'host'}) -> window.postMessage({__voiceExt, payload}) -> 页面
+ */
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const logEl = document.getElementById('log');
+const dotEl = document.getElementById('dot');
+const titleEl = document.getElementById('title');
+const grantBtn = document.getElementById('grant');
+const stopBtn = document.getElementById('stop');
+
+let rec = null;          // SpeechRecognition 实例
+let running = false;     // 是否处于"应该持续识别"的状态
+let finalText = '';      // 本条指令已确认的文本
+let interimText = '';    // 本条指令临时文本
+let pauseTimer = null;
+const PAUSE_MS = 2000;   // 停顿 2 秒视为一条指令说完
+
+// ============ 与扩展通信 ============
+function toExt(type, payload) {
+  window.postMessage({ __voiceHost: true, payload: { type, payload } }, '*');
+}
+
+// 先注册监听，再发 HOST_READY，避免漏掉 background 的即时回包
+window.addEventListener('message', (e) => {
+  if (e.source !== window || !e.data || !e.data.__voiceExt) return;
+  const msg = e.data.payload || {};
+  switch (msg.type) {
+    case 'SYNC_STATE':
+      // background 同步开关/授权状态：已授权且开关为开，则自动开始（无需用户手势）
+      if (msg.payload && msg.payload.listening && msg.payload.micGranted) startASR();
+      break;
+    case 'START_ASR':
+      startASR();
+      break;
+    case 'STOP_ASR':
+      stopASR('⏸ 已停止识别');
+      break;
+  }
+});
+
+// 通知 background：宿主页已就绪，请下发当前状态
+toExt('HOST_READY');
+
+// ============ 识别控制 ============
+async function startASR() {
+  if (!SR) { setLog('❌ 当前浏览器不支持 SpeechRecognition'); return; }
+  if (running) return;
+  running = true;
+  setUI(true);
+
+  // 先显式申请一次麦克风：既能触发浏览器授权框，也能把权限错误说清楚
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((t) => t.stop()); // 只用于申请权限，立刻释放
+  } catch (err) {
+    running = false;
+    setUI(false);
+    setLog('❌ 麦克风权限被拒绝：' + err.name +
+      '（点击按钮重试，或到 edge://settings/content/microphone 将 127.0.0.1 设为允许）');
+    toExt('ASR_ERROR', '麦克风权限被拒绝(' + err.name + ')');
+    toExt('NEED_GESTURE', '请在识别页点击「授权麦克风」');
+    return;
+  }
+
+  if (!rec) createRecognition();
+  try { rec.start(); setLog('🟢 正在聆听…请说指令'); }
+  catch (e) { /* 已在运行时 start 会抛错，忽略 */ }
+}
+
+function stopASR(msg) {
+  running = false;
+  clearTimeout(pauseTimer);
+  if (rec) { try { rec.stop(); } catch (e) {} }
+  setUI(false);
+  if (msg) setLog(msg);
+  toExt('ASR_STOPPED');
+}
+
+function createRecognition() {
+  rec = new SR();
+  rec.lang = 'zh-CN';        // 中文
+  rec.continuous = true;     // 连续识别
+  rec.interimResults = true; // 输出中间结果，便于实时展示
+
+  // 识别器真正启动 = 麦克风已授权，通知扩展记录
+  rec.onstart = () => {
+    toExt('MIC_GRANTED');
+    setUI(true);
+    setLog('🟢 正在聆听…请说指令');
+  };
+
+  rec.onresult = (e) => {
+    interimText = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) finalText = (finalText + ' ' + t).trim();
+      else interimText += t;
+    }
+    const text = (finalText + ' ' + interimText).trim();
+    if (!text) return;
+    setLog('🎤 ' + text);
+    toExt('ASR_PARTIAL', text);
+    armPauseTimer(); // 有新内容就重置 2 秒计时
+  };
+
+  rec.onerror = (e) => {
+    setLog('❌ 识别错误: ' + e.error + (e.error === 'not-allowed'
+      ? '（请点击「授权麦克风」并在弹框选允许）' : ''));
+    toExt('ASR_ERROR', e.error);
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      running = false;
+      setUI(false);
+      toExt('NEED_GESTURE', '请在识别页点击「授权麦克风」');
+    }
+  };
+
+  // 静音超时等导致的结束：只要还处于开启状态就自动重启，保持持续聆听
+  rec.onend = () => {
+    if (running) {
+      try { rec.start(); } catch (e) { setTimeout(() => running && rec.start(), 500); }
+    } else {
+      setUI(false);
+    }
+  };
+}
+
+// 停顿超过 2 秒 -> 把累积文本作为一条完整指令提交
+function armPauseTimer() {
+  clearTimeout(pauseTimer);
+  pauseTimer = setTimeout(() => {
+    const text = (finalText + ' ' + interimText).trim();
+    finalText = '';
+    interimText = '';
+    if (!text) return;
+    toExt('ASR_FINAL', text);
+    setLog('🧠 已接收指令：' + text);
+  }, PAUSE_MS);
+}
+
+// ============ 页面 UI ============
+function setLog(msg) { logEl.textContent = msg; }
+function setUI(on) {
+  dotEl.classList.toggle('on', on);
+  titleEl.textContent = on ? '语音识别运行中' : '语音识别服务';
+  grantBtn.textContent = on ? '🎤 正在识别…' : '🎤 授权麦克风并开始识别';
+}
+
+// 用户手势触发：最可靠的授权路径
+grantBtn.addEventListener('click', () => { if (!running) startASR(); });
+stopBtn.addEventListener('click', () => stopASR('⏸ 已停止识别'));
+
+// 页面关闭时同步扩展状态
+window.addEventListener('beforeunload', () => {
+  running = false;
+  toExt('ASR_STOPPED');
+});
+</script>
+</body>
+</html>

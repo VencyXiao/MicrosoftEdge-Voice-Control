@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --primary: #4f6ef7;
+    --primary-dark: #3b56d9;
+    --danger: #e5484d;
+    --bg: #f5f7fb;
+    --card: #ffffff;
+    --text: #1f2430;
+    --text-sub: #7a8299;
+    --border: #e3e8f2;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 320px;
+    font: 13px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  /* ===== 头部渐变横幅 ===== */
+  .header {
+    background: linear-gradient(135deg, #4f6ef7 0%, #7b5bf5 60%, #9d5bf5 100%);
+    padding: 18px 16px 14px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .header .logo {
+    width: 34px; height: 34px;
+    background: rgba(255,255,255,.2);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .header .title { font-size: 15px; font-weight: 600; letter-spacing: .5px; }
+  .header .subtitle { font-size: 11px; opacity: .85; margin-top: 2px; }
+
+  .content { padding: 14px; }
+
+  /* ===== 开关按钮 ===== */
+  #toggle {
+    width: 100%;
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all .25s ease;
+    box-shadow: 0 4px 14px rgba(79,110,247,.35);
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  #toggle.off { background: linear-gradient(135deg, #4f6ef7, #6b5bf5); }
+  #toggle.off:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(79,110,247,.45); }
+  #toggle.on {
+    background: linear-gradient(135deg, #e5484d, #f06a3f);
+    box-shadow: 0 4px 14px rgba(229,72,77,.35);
+  }
+  #toggle.on:hover { transform: translateY(-1px); }
+
+  /* 麦克风授权按钮与提示 */
+  .auth-btn {
+    margin-top: 8px;
+    width: 100%;
+    padding: 8px;
+    font-size: 12px;
+    color: var(--text-sub);
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .auth-btn:hover { color: var(--primary); border-color: var(--primary); }
+  .auth-tip {
+    margin-top: 8px;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.6;
+    color: #8a6d1a;
+    background: #fff8e1;
+    border: 1px solid #ffe08a;
+    border-radius: 8px;
+  }
+
+  /* ===== 状态栏：聆听时呼吸灯 ===== */
+  .status-bar {
+    margin-top: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex; align-items: center; gap: 8px;
+    color: var(--text-sub);
+    min-height: 40px;
+    font-size: 12px;
+    word-break: break-all;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #b6bcc9; flex-shrink: 0;
+    transition: background .3s;
+  }
+  .status-bar.listening .dot { background: #34c759; animation: pulse 1.4s ease-in-out infinite; }
+  .status-bar.error .dot { background: var(--danger); }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(52,199,89,.5); }
+    50% { box-shadow: 0 0 0 6px rgba(52,199,89,0); }
+  }
+
+  /* ===== 配置卡片 ===== */
+  details { margin-top: 12px; }
+  summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 600;
+    color: var(--text-sub);
+    padding: 8px 4px;
+    border-radius: 8px;
+    transition: color .2s;
+    user-select: none;
+  }
+  summary:hover { color: var(--primary); }
+  summary::-webkit-details-marker { display: none; }
+  summary .arrow { transition: transform .2s; font-size: 10px; }
+  details[open] summary .arrow { transform: rotate(90deg); }
+
+  .config-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-top: 6px;
+  }
+  .field { margin-top: 10px; }
+  .field:first-child { margin-top: 0; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 5px;
+  }
+  .field label .sub { color: var(--text-sub); font-weight: 400; font-size: 11px; }
+  .field input {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .field input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79,110,247,.12);
+    background: #fff;
+  }
+  .field input::placeholder { color: #b6bcc9; }
+  .field select {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    outline: none;
+    cursor: pointer;
+  }
+  .field select:focus { border-color: var(--primary); }
+
+  /* 配置状态标识：绿点 + 文字 */
+  .cfg-status {
+    display: none;                    /* 未配置时不占位 */
+    margin-left: auto;                /* 靠右显示 */
+    align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 600; color: #22a06b;
+  }
+  .cfg-status.show { display: inline-flex; }
+  .cfg-status .dot-ok {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #34c759;
+    box-shadow: 0 0 0 3px rgba(52,199,89,.18);
+  }
+
+  #save {
+    margin-top: 14px;
+    width: 100%;
+    padding: 9px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, #22a06b, #34c759);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all .2s;
+    box-shadow: 0 3px 10px rgba(52,199,89,.3);
+  }
+  #save:hover { transform: translateY(-1px); }
+  #saved { color: #22a06b; font-size: 12px; font-weight: 600; margin-left: 8px; }
+
+  /* ===== 指令说明小字 ===== */
+  .tips { margin-top: 12px; font-size: 11px; color: var(--text-sub); line-height: 1.7; }
+  .tips b { color: var(--text); }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">🎙️</div>
+    <div>
+      <div class="title">语音控制</div>
+      <div class="subtitle">Voice Page Controller</div>
+    </div>
+  </div>
+
+  <div class="content">
+    <!-- 持久开关：开启后持续语音控制，直到再次点击关闭 -->
+    <button id="toggle" class="off">开启语音控制</button>
+
+    <!-- 麦克风授权：打开本地识别页，由用户在页内点击授权 -->
+    <button id="auth-mic" class="auth-btn">🔐 授权麦克风</button>
+    <div id="auth-tip" class="auth-tip" style="display:none">
+      已打开本地识别页，请在页内点击「授权麦克风」并在弹框中选"允许"<br>
+      若提示服务未启动：先运行 <b>server/start_server.bat</b>；若误点了拒绝，到 <b>edge://settings/content/microphone</b> 把 127.0.0.1 改为允许
+    </div>
+
+    <!-- 状态栏：聆听时绿色呼吸灯 -->
+    <div class="status-bar" id="status">
+      <span class="dot"></span><span id="status-text">未开启</span>
+    </div>
+
+    <!-- 配置项：语音识别已用 Web Speech API 免配置，仅需指令解析的 LLM Key -->
+    <details>
+      <summary>
+        <span class="arrow">▶</span>⚙️ 配置
+        <span id="cfg-status" class="cfg-status"></span>
+      </summary>
+      <div class="config-card">
+        <div class="field">
+          <label>指令解析厂商 <span class="sub">文字 → 指令</span></label>
+          <select id="provider">
+            <option value="volc">火山引擎（豆包）</option>
+            <option value="qwen">阿里云（通义千问）</option>
+            <option value="deepseek">DeepSeek</option>
+          </select>
+        </div>
+
+        <!-- 火山豆包配置区 -->
+        <div id="sec-volc">
+          <div class="field">
+            <label>方舟 API Key <span class="sub">豆包指令解析</span></label>
+            <input id="arkApiKey" type="password" placeholder="ark-...">
+          </div>
+          <div class="field">
+            <label>豆包模型</label>
+            <input id="arkModel" placeholder="doubao-lite-32k 或 ep-xxxx">
+          </div>
+        </div>
+
+        <!-- 通义千问配置区 -->
+        <div id="sec-qwen" style="display:none">
+          <div class="field">
+            <label>DashScope API Key</label>
+            <input id="qwenApiKey" type="password" placeholder="sk-...">
+          </div>
+          <div class="field">
+            <label>指令解析模型</label>
+            <input id="qwenLlmModel" placeholder="qwen-turbo">
+          </div>
+        </div>
+
+        <!-- DeepSeek 配置区 -->
+        <div id="sec-deepseek" style="display:none">
+          <div class="field">
+            <label>DeepSeek API Key</label>
+            <input id="deepseekApiKey" type="password" placeholder="sk-...">
+          </div>
+          <div class="field">
+            <label>指令解析模型</label>
+            <input id="deepseekModel" placeholder="deepseek-chat">
+          </div>
+        </div>
+
+        <button id="save">保存配置</button><span id="saved"></span>
+      </div>
+    </details>
+
+    <div class="tips">
+      <b>试试说：</b>"下滑一点" · "清理广告" · "搜一下天气" · "打开哔哩哔哩"
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
